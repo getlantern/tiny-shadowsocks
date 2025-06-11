@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/getlantern/lantern-water-shadowsocks/config"
+	"github.com/getlantern/tiny-shadowsocks/config"
 	"github.com/sagernet/sing/common/metadata"
 )
 

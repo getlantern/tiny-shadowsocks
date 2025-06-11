@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/CosmWasm/tinyjson"
-	"github.com/getlantern/lantern-water-shadowsocks/config"
+	"github.com/getlantern/tiny-shadowsocks/config"
 	v1 "github.com/refraction-networking/watm/tinygo/v1"
 	v1net "github.com/refraction-networking/watm/tinygo/v1/net"
 	"github.com/sagernet/sing/common/metadata"
