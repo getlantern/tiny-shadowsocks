@@ -4,8 +4,7 @@ go 1.23.0
 
 toolchain go1.23.10
 
-// TODO update to latest version of getlantern/sing
-replace github.com/sagernet/sing => github.com/getlantern/sing v0.6.2
+replace github.com/sagernet/sing => github.com/getlantern/sing v0.6.12
 
 require (
 	github.com/CosmWasm/tinyjson v0.9.0
