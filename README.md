@@ -4,7 +4,7 @@ This repository implements a tiny-go shadowsocks client so it can be used as a W
 
 ## Requirements
 
-- [TinyGo](https://tinygo.org/getting-started/install/)
+- [TinyGo](https://tinygo.org/getting-started/install/) - It must be on version 0.31.2
 
 ## Building
 
