@@ -2,7 +2,7 @@ module github.com/getlantern/tiny-shadowsocks
 
 go 1.22.12
 
-replace github.com/sagernet/sing => github.com/getlantern/sing v0.6.12
+replace github.com/sagernet/sing => github.com/getlantern/sing v0.6.13-0.20250613222345-ef046611f2e9
 
 replace github.com/tetratelabs/wazero => github.com/refraction-networking/wazero v1.7.1-w
 
