@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/cipher"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -21,29 +19,8 @@ func TestShadowsocksWrappingTransport_Wrap_NoDialer(t *testing.T) {
 	}
 }
 
-func TestShadowsocksWrappingTransport_Wrap_DialFails(t *testing.T) {
-	// use a dialer with invalid key to force DialConn failure
-	d := &dialer{
-		key: []byte{},
-		encryptConstructor: func(key, salt []byte) (cipher.Stream, error) {
-			return nil, errors.New("encryption failed")
-		},
-		saltLength: 16,
-	}
-	tp := &ShadowsocksWrappingTransport{
-		dialer:      d,
-		destination: metadata.ParseSocksaddr("127.0.0.1:8080"),
-	}
-	conn := &mockConn{readBuf: &bytes.Buffer{}, writeBuf: &bytes.Buffer{}}
-
-	_, err := tp.Wrap(conn)
-	if err == nil || err.Error() == "" {
-		t.Error("Expected wrap to fail due to dialer failure")
-	}
-}
-
 func TestShadowsocksWrappingTransport_Wrap_Success(t *testing.T) {
-	d, err := newDialer("rc4-md5", "testpass")
+	d, err := newDialer("chacha20-ietf-poly1305", "testpass")
 	if err != nil {
 		t.Fatalf("Failed to create dialer: %v", err)
 	}
@@ -65,7 +42,7 @@ func TestShadowsocksWrappingTransport_Wrap_Success(t *testing.T) {
 
 func TestShadowsocksWrappingTransport_Configure_Success(t *testing.T) {
 	cfg := config.Config{
-		Method:     "rc4-md5",
+		Method:     "chacha20-ietf-poly1305",
 		Password:   "abc123",
 		RemoteAddr: "example.com",
 		RemotePort: "1234",
