@@ -39,7 +39,7 @@ func TestWASM(t *testing.T) {
 		"remote_addr": "34.160.111.145",
 		"remote_port": "80",
 		"password": "8JCsPssfgS8tiRwiMlhARg==",
-		"method": "chacha20-ietf"
+		"method": "chacha20-ietf-poly1305"
 	}
 	`
 	cfg := &water.Config{
@@ -113,7 +113,7 @@ func TestDialFixed(t *testing.T) {
 		"remote_addr": "34.160.111.145",
 		"remote_port": "80",
 		"password": "8JCsPssfgS8tiRwiMlhARg==",
-		"method": "chacha20-ietf"
+		"method": "chacha20-ietf-poly1305"
 	}
 	`
 	cfg := &water.Config{
