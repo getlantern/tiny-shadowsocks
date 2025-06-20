@@ -1,40 +1,27 @@
 package main
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
-	"crypto/rand"
-	"crypto/rc4"
+	"crypto/sha1"
 	"errors"
+	"fmt"
 	"io"
-	"net"
 	"os"
-	"strconv"
 
 	v1net "github.com/refraction-networking/watm/tinygo/v1/net"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/metadata"
-	"golang.org/x/crypto/chacha20"
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
 )
 
-type dialer struct {
-	method             string
-	keyLength          int
-	saltLength         int
-	encryptConstructor func(key []byte, salt []byte) (cipher.Stream, error)
-	decryptConstructor func(key []byte, salt []byte) (cipher.Stream, error)
-	key                []byte
-}
-
-func blockStream(blockCreator func(key []byte) (cipher.Block, error), streamCreator func(block cipher.Block, iv []byte) cipher.Stream) func([]byte, []byte) (cipher.Stream, error) {
-	return func(key []byte, iv []byte) (cipher.Stream, error) {
-		block, err := blockCreator(key)
-		if err != nil {
-			return nil, err
-		}
-		return streamCreator(block, iv), err
-	}
+type Dialer struct {
+	method        string
+	keySaltLength int
+	constructor   func(key []byte) (cipher.AEAD, error)
+	key           []byte
 }
 
 func key(password []byte, keySize int) []byte {
@@ -50,57 +37,15 @@ func key(password []byte, keySize int) []byte {
 	return b[:keySize]
 }
 
-func newDialer(method, password string) (*dialer, error) {
-	dialer := &dialer{}
+func newDialer(method, password string) (*Dialer, error) {
+	dialer := &Dialer{method: method}
 	switch method {
-	case "aes-128-ctr":
-		dialer.keyLength = 16
-		dialer.saltLength = aes.BlockSize
-		dialer.encryptConstructor = blockStream(aes.NewCipher, cipher.NewCTR)
-		dialer.decryptConstructor = blockStream(aes.NewCipher, cipher.NewCTR)
-	case "aes-192-ctr":
-		dialer.keyLength = 24
-		dialer.saltLength = aes.BlockSize
-		dialer.encryptConstructor = blockStream(aes.NewCipher, cipher.NewCTR)
-		dialer.decryptConstructor = blockStream(aes.NewCipher, cipher.NewCTR)
-	case "aes-256-ctr":
-		dialer.keyLength = 32
-		dialer.saltLength = aes.BlockSize
-		dialer.encryptConstructor = blockStream(aes.NewCipher, cipher.NewCTR)
-		dialer.decryptConstructor = blockStream(aes.NewCipher, cipher.NewCTR)
-	case "rc4-md5":
-		dialer.keyLength = 16
-		dialer.saltLength = 16
-		dialer.encryptConstructor = func(key []byte, salt []byte) (cipher.Stream, error) {
-			h := md5.New()
-			h.Write(key)
-			h.Write(salt)
-			return rc4.NewCipher(h.Sum(nil))
-		}
-		dialer.decryptConstructor = func(key []byte, salt []byte) (cipher.Stream, error) {
-			h := md5.New()
-			h.Write(key)
-			h.Write(salt)
-			return rc4.NewCipher(h.Sum(nil))
-		}
-	case "chacha20-ietf":
-		dialer.keyLength = chacha20.KeySize
-		dialer.saltLength = chacha20.NonceSize
-		dialer.encryptConstructor = func(key []byte, salt []byte) (cipher.Stream, error) {
-			return chacha20.NewUnauthenticatedCipher(key, salt)
-		}
-		dialer.decryptConstructor = func(key []byte, salt []byte) (cipher.Stream, error) {
-			return chacha20.NewUnauthenticatedCipher(key, salt)
-		}
-	case "xchacha20":
-		dialer.keyLength = chacha20.KeySize
-		dialer.saltLength = chacha20.NonceSizeX
-		dialer.encryptConstructor = func(key []byte, salt []byte) (cipher.Stream, error) {
-			return chacha20.NewUnauthenticatedCipher(key, salt)
-		}
-		dialer.decryptConstructor = func(key []byte, salt []byte) (cipher.Stream, error) {
-			return chacha20.NewUnauthenticatedCipher(key, salt)
-		}
+	case "chacha20-ietf-poly1305":
+		dialer.keySaltLength = 32
+		dialer.constructor = chacha20poly1305.New
+	case "xchacha20-ietf-poly1305":
+		dialer.keySaltLength = 32
+		dialer.constructor = chacha20poly1305.NewX
 	default:
 		return nil, os.ErrInvalid
 	}
@@ -109,127 +54,141 @@ func newDialer(method, password string) (*dialer, error) {
 		return nil, errors.New("password is required")
 	}
 
-	dialer.key = key([]byte(password), dialer.keyLength)
+	dialer.key = key([]byte(password), dialer.keySaltLength)
 	return dialer, nil
 }
 
-func (d *dialer) DialConn(conn v1net.Conn, destination string) (v1net.Conn, error) {
-	shadowsocksConn := &clientConn{
-		dialer:      d,
-		Conn:        conn,
-		destination: destination,
-	}
-	return shadowsocksConn, shadowsocksConn.writeRequest()
+func Kdf(key, iv []byte, buffer *buf.Buffer) {
+	kdf := hkdf.New(sha1.New, key, iv, []byte("ss-subkey"))
+	common.Must1(buffer.ReadFullFrom(kdf, buffer.FreeLen()))
 }
 
-func (d *dialer) DialEarlyConn(conn v1net.Conn, destination string) v1net.Conn {
-	return &clientConn{
-		dialer:      d,
+func (d *Dialer) DialConn(conn v1net.Conn, destination string) (v1net.Conn, error) {
+	shadowsocksConn := &ClientConn{
+		Dialer:      d,
 		Conn:        conn,
-		destination: destination,
+		destination: metadata.ParseSocksaddr(destination),
+	}
+	return shadowsocksConn, shadowsocksConn.writeRequest(nil)
+}
+
+func (d *Dialer) DialEarlyConn(conn v1net.Conn, destination string) v1net.Conn {
+	return &ClientConn{
+		Dialer:      d,
+		Conn:        conn,
+		destination: metadata.ParseSocksaddr(destination),
 	}
 }
 
-type clientConn struct {
-	*dialer
+type ClientConn struct {
+	*Dialer
 	v1net.Conn  // embedded Conn
-	destination string
-	readStream  cipher.Stream
-	writeStream cipher.Stream
+	destination metadata.Socksaddr
+	reader      *Reader
+	writer      *Writer
 }
 
-func parseSocksaddrFromString(destination string) (metadata.Socksaddr, error) {
-	var addr metadata.Socksaddr
-	host, port, err := net.SplitHostPort(destination)
+func (c *ClientConn) writeRequest(payload []byte) error {
+	salt := buf.NewSize(c.keySaltLength)
+	defer salt.Release()
+	salt.WriteRandom(c.keySaltLength)
+
+	key := buf.NewSize(c.keySaltLength)
+
+	Kdf(c.key, salt.Bytes(), key)
+	writeCipher, err := c.constructor(key.Bytes())
+	key.Release()
 	if err != nil {
-		return addr, err
+		fmt.Println("error creating cipher:", err)
+		return err
+	}
+	writer := NewWriter(c.Conn, writeCipher, MaxPacketSize)
+	header := writer.Buffer()
+	common.Must1(header.Write(salt.Bytes()))
+	bufferedWriter := writer.BufferedWriter(header.Len())
+
+	if len(payload) > 0 {
+		err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedWriter, c.destination)
+		if err != nil {
+			fmt.Println("error writing address and port:", err)
+			return err
+		}
+
+		_, err = bufferedWriter.Write(payload)
+		if err != nil {
+			fmt.Println("error writing payload:", err)
+			return err
+		}
+	} else {
+		err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedWriter, c.destination)
+		if err != nil {
+			fmt.Println("error writing address and port:", err)
+			return err
+		}
 	}
 
-	ip := net.ParseIP(host)
-	p, err := strconv.Atoi(port)
+	err = bufferedWriter.Flush()
 	if err != nil {
-		return addr, err
-	}
-	tcpAddr := &net.TCPAddr{
-		IP:   ip,
-		Port: p,
-	}
-	return metadata.SocksaddrFromNet(tcpAddr), nil
-}
-
-func (c *clientConn) writeRequest() error {
-	addr, err := parseSocksaddrFromString(c.destination)
-	if err != nil {
+		fmt.Println("error flushing buffered writer:", err)
 		return err
 	}
 
-	buffer := buf.NewSize(c.saltLength + metadata.SocksaddrSerializer.AddrPortLen(addr))
-	defer buffer.Release()
-
-	salt := buffer.Extend(c.saltLength)
-	_, err = io.ReadFull(rand.Reader, salt)
-	if err != nil {
-		return err
-	}
-
-	stream, err := c.encryptConstructor(c.key, salt)
-	if err != nil {
-		return err
-	}
-
-	err = metadata.SocksaddrSerializer.WriteAddrPort(buffer, addr)
-	if err != nil {
-		return err
-	}
-
-	stream.XORKeyStream(buffer.From(c.saltLength), buffer.From(c.saltLength))
-
-	_, err = c.Conn.Write(buffer.Bytes())
-	if err != nil {
-		return err
-	}
-
-	c.writeStream = stream
+	c.writer = writer
 	return nil
 }
 
-func (c *clientConn) readResponse() error {
-	if c.readStream != nil {
-		return nil
-	}
-
-	salt := make([]byte, c.saltLength)
-	_, err := io.ReadFull(c.Conn, salt)
+func (c *ClientConn) readResponse() error {
+	salt := buf.NewSize(c.keySaltLength)
+	defer salt.Release()
+	_, err := salt.ReadFullFrom(c.Conn, c.keySaltLength)
 	if err != nil {
+		fmt.Println("error reading salt:", err)
 		return err
 	}
-	c.readStream, err = c.decryptConstructor(c.key, salt)
-	return err
-}
-
-func (c *clientConn) Read(p []byte) (n int, err error) {
-	if c.readStream == nil {
-		err = c.readResponse()
-		if err != nil {
-			return
-		}
-	}
-	n, err = c.Conn.Read(p)
+	key := buf.NewSize(c.keySaltLength)
+	defer key.Release()
+	Kdf(c.key, salt.Bytes(), key)
+	readCipher, err := c.constructor(key.Bytes())
 	if err != nil {
-		return
+		fmt.Println("error creating read cipher:", err)
+		return err
 	}
-	c.readStream.XORKeyStream(p[:n], p[:n])
-	return
+	c.reader = NewReader(
+		c.Conn,
+		readCipher,
+		MaxPacketSize,
+	)
+	return nil
 }
 
-func (c *clientConn) Write(p []byte) (n int, err error) {
-	if c.writeStream == nil {
-		err = c.writeRequest()
-		if err != nil {
+func (c *ClientConn) Read(p []byte) (n int, err error) {
+	if c.reader == nil {
+		if err = c.readResponse(); err != nil {
+			fmt.Println("error reading response:", err)
 			return
 		}
 	}
+	return c.reader.Read(p)
+}
 
-	c.writeStream.XORKeyStream(p, p)
-	return c.Conn.Write(p)
+func (c *ClientConn) WriteTo(w io.Writer) (n int64, err error) {
+	if c.reader == nil {
+		if err = c.readResponse(); err != nil {
+			fmt.Println("error reading response for WriteTo:", err)
+			return
+		}
+	}
+	return c.reader.WriteTo(w)
+}
+
+func (c *ClientConn) Write(p []byte) (n int, err error) {
+	if c.writer == nil {
+		err = c.writeRequest(p)
+		if err != nil {
+			fmt.Println("error writing request:", err)
+			return
+		}
+		return len(p), nil
+	}
+	return c.writer.Write(p)
 }
