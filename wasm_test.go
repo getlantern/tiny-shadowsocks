@@ -62,7 +62,6 @@ func TestWASM(t *testing.T) {
 	defer conn.Close()
 
 	// Send a simple HTTP GET request
-	// Send a simple HTTP GET request
 	request, err := http.NewRequest("GET", "http://ifconfig.me/ip", nil)
 	if err != nil {
 		t.Fatalf("failed to create HTTP request: %v", err)
