@@ -19,7 +19,6 @@ import (
 func TestWASM(t *testing.T) {
 	// verify if build/shadowsocks.wasm exists
 	filename := "build/shadowsocks_client_debug.wasm"
-	// filename := "/home/wendelhime/github.com/watm/tinygo/v1/examples/plain/plain.wasm"
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		t.Skipf("Skipping test: %q does not exist. Please run 'make debug' or 'make release' to generate the WASM file.", filename)
 	}
