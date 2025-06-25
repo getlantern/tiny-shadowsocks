@@ -1,5 +1,7 @@
 package main
 
+// This file is copy-pasted from sing-shadowsocks/shadowaead
+
 import (
 	"crypto/cipher"
 	"encoding/binary"
