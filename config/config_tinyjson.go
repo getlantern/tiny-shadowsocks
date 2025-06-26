@@ -15,7 +15,7 @@ var (
 	_ tinyjson.Marshaler
 )
 
-func tinyjson79908536DecodeGithubComGetlanternLanternWaterShadowsocksConfig(in *jlexer.Lexer, out *Config) {
+func tinyjson79908536DecodeGithubComGetlanternTinyShadowsocksConfig(in *jlexer.Lexer, out *Config) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -52,7 +52,7 @@ func tinyjson79908536DecodeGithubComGetlanternLanternWaterShadowsocksConfig(in *
 		in.Consumed()
 	}
 }
-func tinyjson79908536EncodeGithubComGetlanternLanternWaterShadowsocksConfig(out *jwriter.Writer, in Config) {
+func tinyjson79908536EncodeGithubComGetlanternTinyShadowsocksConfig(out *jwriter.Writer, in Config) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -82,23 +82,23 @@ func tinyjson79908536EncodeGithubComGetlanternLanternWaterShadowsocksConfig(out 
 // MarshalJSON supports json.Marshaler interface
 func (v Config) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	tinyjson79908536EncodeGithubComGetlanternLanternWaterShadowsocksConfig(&w, v)
+	tinyjson79908536EncodeGithubComGetlanternTinyShadowsocksConfig(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalTinyJSON supports tinyjson.Marshaler interface
 func (v Config) MarshalTinyJSON(w *jwriter.Writer) {
-	tinyjson79908536EncodeGithubComGetlanternLanternWaterShadowsocksConfig(w, v)
+	tinyjson79908536EncodeGithubComGetlanternTinyShadowsocksConfig(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *Config) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	tinyjson79908536DecodeGithubComGetlanternLanternWaterShadowsocksConfig(&r, v)
+	tinyjson79908536DecodeGithubComGetlanternTinyShadowsocksConfig(&r, v)
 	return r.Error()
 }
 
 // UnmarshalTinyJSON supports tinyjson.Unmarshaler interface
 func (v *Config) UnmarshalTinyJSON(l *jlexer.Lexer) {
-	tinyjson79908536DecodeGithubComGetlanternLanternWaterShadowsocksConfig(l, v)
+	tinyjson79908536DecodeGithubComGetlanternTinyShadowsocksConfig(l, v)
 }

@@ -2,8 +2,8 @@
 package config
 
 // Config contains the configuration for the shadowsocks dialer.
-// Currently it only support the following encryption methods: "aes-128-ctr",
-// "aes-192-ctr", "aes-256-ctr", "rc4-md5", "chacha20-ietf", "xchacha20"
+// Currently it only support the following encryption methods: "chacha20-ietf-poly1305"
+// and "xchacha20-ietf-poly1305"
 //
 //tinyjson:json
 type Config struct {

@@ -12,10 +12,13 @@ config:
 	tinyjson -all $(CONFIG_FILE)
 
 debug:
-	tinygo build -o build/shadowsocks.wasm -target=wasi -scheduler=asyncify -gc=conservative -tags=purego .
+	tinygo build -o build/shadowsocks_client_debug.wasm -target=wasi -scheduler=none -gc=conservative .
 
 release:
-	tinygo build -o build/shadowsocks.wasm -target=wasi -no-debug -scheduler=asyncify -gc=conservative -tags=purego .
+	tinygo build -o build/shadowsocks_client.wasm -target=wasi -no-debug -scheduler=none -gc=conservative .
 
 test:
 	go test ./...
+
+integration-test: debug
+	go test --tags integration -timeout=3s ./...
