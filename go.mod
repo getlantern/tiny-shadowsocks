@@ -8,7 +8,7 @@ replace github.com/tetratelabs/wazero => github.com/refraction-networking/wazero
 
 require (
 	github.com/CosmWasm/tinyjson v0.9.0
-	github.com/refraction-networking/water v0.7.0-alpha
+	github.com/refraction-networking/water v0.7.1-alpha
 	github.com/refraction-networking/watm v0.7.0-beta
 	github.com/sagernet/sing v0.6.11
 	golang.org/x/crypto v0.24.0
