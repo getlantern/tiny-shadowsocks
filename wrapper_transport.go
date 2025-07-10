@@ -24,7 +24,7 @@ func (t *ShadowsocksWrappingTransport) Wrap(conn v1net.Conn) (v1net.Conn, error)
 		return nil, fmt.Errorf("dialer is not configured")
 	}
 
-	return t.dialer.DialEarlyConn(conn, t.destination.String()), conn.SetNonBlock(true)
+	return t.dialer.DialEarlyConn(conn, t.destination), conn.SetNonBlock(true)
 }
 
 func (t *ShadowsocksWrappingTransport) Configure(cfg []byte) error {
@@ -40,6 +40,7 @@ func (t *ShadowsocksWrappingTransport) Configure(cfg []byte) error {
 		return fmt.Errorf("failed to create dialer: %w", err)
 	}
 	t.dialer = dialer
-	t.destination = metadata.ParseSocksaddr(fmt.Sprintf("%s:%s", parsedConfig.RemoteAddr, parsedConfig.RemotePort))
+
+	t.destination = metadata.ParseSocksaddrHostPortStr(parsedConfig.RemoteAddr, parsedConfig.RemotePort)
 	return nil
 }
