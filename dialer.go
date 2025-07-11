@@ -63,20 +63,20 @@ func Kdf(key, iv []byte, buffer *buf.Buffer) {
 	common.Must1(buffer.ReadFullFrom(kdf, buffer.FreeLen()))
 }
 
-func (d *Dialer) DialConn(conn v1net.Conn, destination string) (v1net.Conn, error) {
+func (d *Dialer) DialConn(conn v1net.Conn, destination metadata.Socksaddr) (v1net.Conn, error) {
 	shadowsocksConn := &ClientConn{
 		Dialer:      d,
 		Conn:        conn,
-		destination: metadata.ParseSocksaddr(destination),
+		destination: destination,
 	}
 	return shadowsocksConn, shadowsocksConn.writeRequest(nil)
 }
 
-func (d *Dialer) DialEarlyConn(conn v1net.Conn, destination string) v1net.Conn {
+func (d *Dialer) DialEarlyConn(conn v1net.Conn, destination metadata.Socksaddr) v1net.Conn {
 	return &ClientConn{
 		Dialer:      d,
 		Conn:        conn,
-		destination: metadata.ParseSocksaddr(destination),
+		destination: destination,
 	}
 }
 

@@ -30,7 +30,7 @@ func (fdt *ShadowsocksFixedDialingTransport) DialFixed() (v1net.Conn, error) {
 		return nil, err
 	}
 
-	return fdt.shadowsocksDialer.DialEarlyConn(conn, fdt.destination.AddrPort().String()), conn.SetNonBlock(true) // must set non-block, otherwise will block on read and lose fairness
+	return fdt.shadowsocksDialer.DialEarlyConn(conn, fdt.destination), conn.SetNonBlock(true) // must set non-block, otherwise will block on read and lose fairness
 }
 
 func (fdt *ShadowsocksFixedDialingTransport) Configure(cfg []byte) error {
