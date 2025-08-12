@@ -94,7 +94,7 @@ func (c *ClientConn) writeRequest(payload []byte) error {
 	requestBuffer.WriteRandom(c.keySaltLength)
 	key := buf.NewSize(c.keySaltLength)
 	Kdf(c.key, requestBuffer.Bytes(), key)
-	writeCipher, err := c.Dialer.constructor(key.Bytes())
+	writeCipher, err := c.constructor(key.Bytes())
 	if err != nil {
 		return err
 	}
@@ -130,8 +130,8 @@ func (c *ClientConn) readResponse() error {
 	}
 	key := buf.NewSize(c.keySaltLength)
 	defer key.Release()
-	Kdf(c.Dialer.key, buffer.Bytes(), key)
-	readCipher, err := c.Dialer.constructor(key.Bytes())
+	Kdf(c.key, buffer.Bytes(), key)
+	readCipher, err := c.constructor(key.Bytes())
 	if err != nil {
 		fmt.Println("failed to build cipher decrypt: ", err)
 		return err
@@ -143,8 +143,8 @@ func (c *ClientConn) readResponse() error {
 
 func (c *ClientConn) Read(p []byte) (n int, err error) {
 	if c.reader == nil {
-		if err = c.readResponse(); err != nil {
-			fmt.Println("error reading response:", err)
+		err = c.readResponse()
+		if err != nil {
 			return
 		}
 	}
@@ -154,11 +154,10 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 func (c *ClientConn) Write(p []byte) (n int, err error) {
 	if c.writer == nil {
 		err = c.writeRequest(p)
-		if err != nil {
-			fmt.Println("error writing request:", err)
-			return
+		if err == nil {
+			n = len(p)
 		}
-		return len(p), nil
+		return
 	}
 	return c.writer.Write(p)
 }
