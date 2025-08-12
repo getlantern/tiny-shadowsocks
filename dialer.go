@@ -6,9 +6,10 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
+	"github.com/getlantern/tiny-shadowsocks/bufio"
+	"github.com/getlantern/tiny-shadowsocks/internal/shadowio"
 	v1net "github.com/refraction-networking/watm/tinygo/v1/net"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
@@ -84,80 +85,59 @@ type ClientConn struct {
 	*Dialer
 	v1net.Conn  // embedded Conn
 	destination metadata.Socksaddr
-	reader      *Reader
-	writer      *Writer
+	reader      *shadowio.Reader
+	writer      *shadowio.Writer
 }
 
 func (c *ClientConn) writeRequest(payload []byte) error {
-	salt := buf.NewSize(c.keySaltLength)
-	defer salt.Release()
-	salt.WriteRandom(c.keySaltLength)
-
+	requestBuffer := buf.New()
+	requestBuffer.WriteRandom(c.keySaltLength)
 	key := buf.NewSize(c.keySaltLength)
-
-	Kdf(c.key, salt.Bytes(), key)
-	writeCipher, err := c.constructor(key.Bytes())
-	key.Release()
+	Kdf(c.key, requestBuffer.Bytes(), key)
+	writeCipher, err := c.Dialer.constructor(key.Bytes())
 	if err != nil {
-		fmt.Println("error creating cipher:", err)
 		return err
 	}
-	writer := NewWriter(c.Conn, writeCipher, MaxPacketSize)
-	header := writer.Buffer()
-	common.Must1(header.Write(salt.Bytes()))
-	bufferedWriter := writer.BufferedWriter(header.Len())
-
-	if len(payload) > 0 {
-		err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedWriter, c.destination)
-		if err != nil {
-			fmt.Println("error writing address and port:", err)
-			return err
-		}
-
-		_, err = bufferedWriter.Write(payload)
-		if err != nil {
-			fmt.Println("error writing payload:", err)
-			return err
-		}
-	} else {
-		err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedWriter, c.destination)
-		if err != nil {
-			fmt.Println("error writing address and port:", err)
-			return err
-		}
-	}
-
-	err = bufferedWriter.Flush()
-	if err != nil {
-		fmt.Println("error flushing buffered writer:", err)
+	bufferedRequestWriter := bufio.NewBufferedWriter(c.Conn, requestBuffer)
+	requestContentWriter := shadowio.NewWriter(bufferedRequestWriter, writeCipher, nil, MaxPacketSize)
+	bufferedRequestContentWriter := bufio.NewBufferedWriter(requestContentWriter, buf.New())
+	if err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedRequestContentWriter, c.destination); err != nil {
 		return err
 	}
 
-	c.writer = writer
+	if _, err = bufferedRequestContentWriter.Write(payload); err != nil {
+		return err
+	}
+
+	if err = bufferedRequestContentWriter.Fallthrough(); err != nil {
+		return err
+	}
+
+	if err = bufferedRequestWriter.Fallthrough(); err != nil {
+		return err
+	}
+	c.writer = shadowio.NewWriter(c.Conn, writeCipher, requestContentWriter.TakeNonce(), MaxPacketSize)
 	return nil
 }
 
 func (c *ClientConn) readResponse() error {
-	salt := buf.NewSize(c.keySaltLength)
-	defer salt.Release()
-	_, err := salt.ReadFullFrom(c.Conn, c.keySaltLength)
-	if err != nil {
-		fmt.Println("error reading salt:", err)
+	buffer := buf.NewSize(c.keySaltLength)
+	defer buffer.Release()
+
+	if _, err := buffer.ReadFullFrom(c.Conn, c.keySaltLength); err != nil {
+		fmt.Println("failed to read salt", err)
 		return err
 	}
 	key := buf.NewSize(c.keySaltLength)
 	defer key.Release()
-	Kdf(c.key, salt.Bytes(), key)
-	readCipher, err := c.constructor(key.Bytes())
+	Kdf(c.Dialer.key, buffer.Bytes(), key)
+	readCipher, err := c.Dialer.constructor(key.Bytes())
 	if err != nil {
-		fmt.Println("error creating read cipher:", err)
+		fmt.Println("failed to build cipher decrypt: ", err)
 		return err
 	}
-	c.reader = NewReader(
-		c.Conn,
-		readCipher,
-		MaxPacketSize,
-	)
+	reader := shadowio.NewReader(c.Conn, readCipher)
+	c.reader = reader
 	return nil
 }
 
@@ -169,16 +149,6 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 		}
 	}
 	return c.reader.Read(p)
-}
-
-func (c *ClientConn) WriteTo(w io.Writer) (n int64, err error) {
-	if c.reader == nil {
-		if err = c.readResponse(); err != nil {
-			fmt.Println("error reading response for WriteTo:", err)
-			return
-		}
-	}
-	return c.reader.WriteTo(w)
 }
 
 func (c *ClientConn) Write(p []byte) (n int, err error) {
