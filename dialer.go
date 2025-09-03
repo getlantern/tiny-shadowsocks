@@ -155,7 +155,7 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 			return
 		}
 	}
-	buffer := buf.New()
+	buffer := buf.NewSize(len(p))
 	defer buffer.Release()
 	if err := c.reader.ReadBuffer(buffer); err != nil {
 		return 0, err
