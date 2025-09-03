@@ -5,13 +5,12 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"errors"
-	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/getlantern/tiny-shadowsocks/bufio"
 	"github.com/getlantern/tiny-shadowsocks/internal/shadowio"
 	v1net "github.com/refraction-networking/watm/tinygo/v1/net"
-	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/metadata"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -59,9 +58,10 @@ func newDialer(method, password string) (*Dialer, error) {
 	return dialer, nil
 }
 
-func Kdf(key, iv []byte, buffer *buf.Buffer) {
+func Kdf(key, iv []byte, buffer *buf.Buffer) error {
 	kdf := hkdf.New(sha1.New, key, iv, []byte("ss-subkey"))
-	common.Must1(buffer.ReadFullFrom(kdf, buffer.FreeLen()))
+	_, err := buffer.ReadFullFrom(kdf, buffer.FreeLen())
+	return err
 }
 
 func (d *Dialer) DialConn(conn v1net.Conn, destination metadata.Socksaddr) (v1net.Conn, error) {
@@ -93,7 +93,10 @@ func (c *ClientConn) writeRequest(payload []byte) error {
 	requestBuffer := buf.New()
 	requestBuffer.WriteRandom(c.keySaltLength)
 	key := buf.NewSize(c.keySaltLength)
-	Kdf(c.key, requestBuffer.Bytes(), key)
+	if err := Kdf(c.key, requestBuffer.Bytes(), key); err != nil {
+		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
+		return err
+	}
 	writeCipher, err := c.constructor(key.Bytes())
 	if err != nil {
 		return err
@@ -125,15 +128,18 @@ func (c *ClientConn) readResponse() error {
 	defer buffer.Release()
 
 	if _, err := buffer.ReadFullFrom(c.Conn, c.keySaltLength); err != nil {
-		fmt.Println("failed to read salt", err)
+		slog.Warn("failed to read salt", slog.Any("error", err))
 		return err
 	}
 	key := buf.NewSize(c.keySaltLength)
 	defer key.Release()
-	Kdf(c.key, buffer.Bytes(), key)
+	if err := Kdf(c.key, buffer.Bytes(), key); err != nil {
+		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
+		return err
+	}
 	readCipher, err := c.constructor(key.Bytes())
 	if err != nil {
-		fmt.Println("failed to build cipher decrypt: ", err)
+		slog.Error("failed to build cipher decrypt", slog.Any("error", err))
 		return err
 	}
 	reader := shadowio.NewReader(c.Conn, readCipher)
@@ -148,7 +154,11 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 			return
 		}
 	}
-	return c.reader.Read(p)
+	buffer := buf.New()
+	if err := c.reader.ReadBuffer(buffer); err != nil {
+		return 0, err
+	}
+	return copy(p, buffer.Bytes()), nil
 }
 
 func (c *ClientConn) Write(p []byte) (n int, err error) {

@@ -4,6 +4,7 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"io"
+	"log/slog"
 
 	"github.com/sagernet/sing/common/buf"
 	N "github.com/sagernet/sing/common/network"
@@ -155,11 +156,13 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 	buffer := buf.NewSize(PacketLengthBufferSize + Overhead)
 	_, err := buffer.ReadFullFrom(r.reader, buffer.FreeLen())
 	if err != nil {
+		slog.Warn("failed to read encoded packet length", slog.Any("error", err))
 		buffer.Release()
 		return nil, err
 	}
 	_, err = r.cipher.Open(buffer.Index(0), r.nonce, buffer.Bytes(), nil)
 	if err != nil {
+		slog.Error("failed to decode packet length", slog.Any("error", err))
 		buffer.Release()
 		return nil, err
 	}
@@ -169,14 +172,16 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 	buffer = buf.NewSize(length + Overhead)
 	_, err = buffer.ReadFullFrom(r.reader, buffer.FreeLen())
 	if err != nil {
+		slog.Warn("failed to read encoded content", slog.Any("error", err))
 		buffer.Release()
 		return nil, err
 	}
 	// if length was extracted, decoded correctly and the content was read successfully
-	// increase once
+	// increase nonce
 	increaseNonce(r.nonce)
 	_, err = r.cipher.Open(buffer.Index(0), r.nonce, buffer.Bytes(), nil)
 	if err != nil {
+		slog.Error("failed to decode content", slog.Any("error", err))
 		buffer.Release()
 		return nil, err
 	}
