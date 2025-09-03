@@ -6,7 +6,7 @@ import (
 
 func init() {
 	v1.WorkerFairness(false)
-	v1.SetReadBufferSize(1024) // 1024B buffer for copying data
+	v1.SetReadBufferSize(MaxPacketSize)
 	v1.BuildDialerWithWrappingTransport(&ShadowsocksWrappingTransport{})
 	// v1.BuildListenerWithWrappingTransport(&ShadowsocksWrappingTransport{})
 	// v1.BuildRelayWithWrappingTransport(&ShadowsocksWrappingTransport{}, v1.RelayWrapRemote)
