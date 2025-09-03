@@ -8,6 +8,7 @@ import (
 	"time"
 
 	v1net "github.com/refraction-networking/watm/tinygo/v1/net"
+	"github.com/sagernet/sing/common/metadata"
 )
 
 type mockConn struct {
@@ -71,7 +72,7 @@ func TestDialConn_WriteRequest(t *testing.T) {
 	writeBuf := &bytes.Buffer{}
 	conn := &mockConn{readBuf: readBuf, writeBuf: writeBuf}
 
-	dialedConn, err := d.DialConn(conn, "127.0.0.1:8080")
+	dialedConn, err := d.DialConn(conn, metadata.ParseSocksaddrHostPortStr("127.0.0.1", "8080"))
 	if err != nil {
 		t.Fatalf("DialConn failed: %v", err)
 	}
