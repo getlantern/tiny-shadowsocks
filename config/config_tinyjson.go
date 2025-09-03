@@ -42,6 +42,8 @@ func tinyjson79908536DecodeGithubComGetlanternTinyShadowsocksConfig(in *jlexer.L
 			out.Password = string(in.String())
 		case "method":
 			out.Method = string(in.String())
+		case "internal_buffer_size":
+			out.InternalBufferSize = int(in.Int())
 		default:
 			in.SkipRecursive()
 		}
@@ -75,6 +77,11 @@ func tinyjson79908536EncodeGithubComGetlanternTinyShadowsocksConfig(out *jwriter
 		const prefix string = ",\"method\":"
 		out.RawString(prefix)
 		out.String(string(in.Method))
+	}
+	{
+		const prefix string = ",\"internal_buffer_size\":"
+		out.RawString(prefix)
+		out.Int(int(in.InternalBufferSize))
 	}
 	out.RawByte('}')
 }

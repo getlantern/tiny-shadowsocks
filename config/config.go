@@ -7,8 +7,9 @@ package config
 //
 //tinyjson:json
 type Config struct {
-	RemoteAddr string `json:"remote_addr"`
-	RemotePort string `json:"remote_port"`
-	Password   string `json:"password"`
-	Method     string `json:"method"`
+	RemoteAddr         string `json:"remote_addr"`
+	RemotePort         string `json:"remote_port"`
+	Password           string `json:"password"`
+	Method             string `json:"method"`
+	InternalBufferSize int    `json:"internal_buffer_size"`
 }

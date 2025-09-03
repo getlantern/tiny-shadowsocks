@@ -5,12 +5,12 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"errors"
-	"fmt"
-	"io"
+	"log/slog"
 	"os"
 
+	"github.com/getlantern/tiny-shadowsocks/bufio"
+	"github.com/getlantern/tiny-shadowsocks/internal/shadowio"
 	v1net "github.com/refraction-networking/watm/tinygo/v1/net"
-	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/metadata"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -58,9 +58,10 @@ func newDialer(method, password string) (*Dialer, error) {
 	return dialer, nil
 }
 
-func Kdf(key, iv []byte, buffer *buf.Buffer) {
+func Kdf(key, iv []byte, buffer *buf.Buffer) error {
 	kdf := hkdf.New(sha1.New, key, iv, []byte("ss-subkey"))
-	common.Must1(buffer.ReadFullFrom(kdf, buffer.FreeLen()))
+	_, err := buffer.ReadFullFrom(kdf, buffer.FreeLen())
+	return err
 }
 
 func (d *Dialer) DialConn(conn v1net.Conn, destination metadata.Socksaddr) (v1net.Conn, error) {
@@ -84,111 +85,91 @@ type ClientConn struct {
 	*Dialer
 	v1net.Conn  // embedded Conn
 	destination metadata.Socksaddr
-	reader      *Reader
-	writer      *Writer
+	reader      *shadowio.Reader
+	writer      *shadowio.Writer
 }
 
 func (c *ClientConn) writeRequest(payload []byte) error {
-	salt := buf.NewSize(c.keySaltLength)
-	defer salt.Release()
-	salt.WriteRandom(c.keySaltLength)
-
+	requestBuffer := buf.New()
+	defer requestBuffer.Release()
+	requestBuffer.WriteRandom(c.keySaltLength)
 	key := buf.NewSize(c.keySaltLength)
-
-	Kdf(c.key, salt.Bytes(), key)
+	defer key.Release()
+	if err := Kdf(c.key, requestBuffer.Bytes(), key); err != nil {
+		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
+		return err
+	}
 	writeCipher, err := c.constructor(key.Bytes())
-	key.Release()
 	if err != nil {
-		fmt.Println("error creating cipher:", err)
 		return err
 	}
-	writer := NewWriter(c.Conn, writeCipher, MaxPacketSize)
-	header := writer.Buffer()
-	common.Must1(header.Write(salt.Bytes()))
-	bufferedWriter := writer.BufferedWriter(header.Len())
-
-	if len(payload) > 0 {
-		err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedWriter, c.destination)
-		if err != nil {
-			fmt.Println("error writing address and port:", err)
-			return err
-		}
-
-		_, err = bufferedWriter.Write(payload)
-		if err != nil {
-			fmt.Println("error writing payload:", err)
-			return err
-		}
-	} else {
-		err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedWriter, c.destination)
-		if err != nil {
-			fmt.Println("error writing address and port:", err)
-			return err
-		}
-	}
-
-	err = bufferedWriter.Flush()
-	if err != nil {
-		fmt.Println("error flushing buffered writer:", err)
+	bufferedRequestWriter := bufio.NewBufferedWriter(c.Conn, requestBuffer)
+	requestContentWriter := shadowio.NewWriter(bufferedRequestWriter, writeCipher, nil, MaxPacketSize)
+	bufferedRequestContentWriter := bufio.NewBufferedWriter(requestContentWriter, buf.New())
+	if err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedRequestContentWriter, c.destination); err != nil {
 		return err
 	}
 
-	c.writer = writer
+	if _, err = bufferedRequestContentWriter.Write(payload); err != nil {
+		return err
+	}
+
+	if err = bufferedRequestContentWriter.Fallthrough(); err != nil {
+		return err
+	}
+
+	if err = bufferedRequestWriter.Fallthrough(); err != nil {
+		return err
+	}
+	c.writer = shadowio.NewWriter(c.Conn, writeCipher, requestContentWriter.TakeNonce(), MaxPacketSize)
 	return nil
 }
 
 func (c *ClientConn) readResponse() error {
-	salt := buf.NewSize(c.keySaltLength)
-	defer salt.Release()
-	_, err := salt.ReadFullFrom(c.Conn, c.keySaltLength)
-	if err != nil {
-		fmt.Println("error reading salt:", err)
+	buffer := buf.NewSize(c.keySaltLength)
+	defer buffer.Release()
+	if _, err := buffer.ReadFullFrom(c.Conn, c.keySaltLength); err != nil {
+		slog.Warn("failed to read salt", slog.Any("error", err))
 		return err
 	}
 	key := buf.NewSize(c.keySaltLength)
 	defer key.Release()
-	Kdf(c.key, salt.Bytes(), key)
-	readCipher, err := c.constructor(key.Bytes())
-	if err != nil {
-		fmt.Println("error creating read cipher:", err)
+	if err := Kdf(c.key, buffer.Bytes(), key); err != nil {
+		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
 		return err
 	}
-	c.reader = NewReader(
-		c.Conn,
-		readCipher,
-		MaxPacketSize,
-	)
+	readCipher, err := c.constructor(key.Bytes())
+	if err != nil {
+		slog.Error("failed to build cipher decrypt", slog.Any("error", err))
+		return err
+	}
+	reader := shadowio.NewReader(c.Conn, readCipher)
+	c.reader = reader
 	return nil
 }
 
 func (c *ClientConn) Read(p []byte) (n int, err error) {
 	if c.reader == nil {
-		if err = c.readResponse(); err != nil {
-			fmt.Println("error reading response:", err)
+		err = c.readResponse()
+		if err != nil {
 			return
 		}
 	}
-	return c.reader.Read(p)
-}
-
-func (c *ClientConn) WriteTo(w io.Writer) (n int64, err error) {
-	if c.reader == nil {
-		if err = c.readResponse(); err != nil {
-			fmt.Println("error reading response for WriteTo:", err)
-			return
-		}
+	buffer := buf.NewSize(len(p))
+	defer buffer.Release()
+	if err := c.reader.ReadBuffer(buffer); err != nil {
+		return 0, err
 	}
-	return c.reader.WriteTo(w)
+	return copy(p, buffer.Bytes()), nil
 }
 
 func (c *ClientConn) Write(p []byte) (n int, err error) {
 	if c.writer == nil {
 		err = c.writeRequest(p)
-		if err != nil {
-			fmt.Println("error writing request:", err)
-			return
+		if err == nil {
+			n = len(p)
 		}
-		return len(p), nil
+		return
 	}
 	return c.writer.Write(p)
 }
