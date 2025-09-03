@@ -149,7 +149,6 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	increaseNonce(r.nonce)
 	length := int(binary.BigEndian.Uint16(r.buffer[:PacketLengthBufferSize]))
 	end := length + Overhead
 
@@ -159,6 +158,7 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 		if err != nil {
 			return 0, err
 		}
+		increaseNonce(r.nonce)
 		_, err = r.cipher.Open(b[:0], r.nonce, data, nil)
 		if err != nil {
 			return 0, err
@@ -170,6 +170,7 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 		if err != nil {
 			return 0, err
 		}
+		increaseNonce(r.nonce)
 		_, err = r.cipher.Open(r.buffer[:0], r.nonce, r.buffer[:end], nil)
 		if err != nil {
 			return 0, err
