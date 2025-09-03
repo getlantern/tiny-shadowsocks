@@ -91,8 +91,10 @@ type ClientConn struct {
 
 func (c *ClientConn) writeRequest(payload []byte) error {
 	requestBuffer := buf.New()
+	defer requestBuffer.Release()
 	requestBuffer.WriteRandom(c.keySaltLength)
 	key := buf.NewSize(c.keySaltLength)
+	defer key.Release()
 	if err := Kdf(c.key, requestBuffer.Bytes(), key); err != nil {
 		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
 		return err
@@ -126,7 +128,6 @@ func (c *ClientConn) writeRequest(payload []byte) error {
 func (c *ClientConn) readResponse() error {
 	buffer := buf.NewSize(c.keySaltLength)
 	defer buffer.Release()
-
 	if _, err := buffer.ReadFullFrom(c.Conn, c.keySaltLength); err != nil {
 		slog.Warn("failed to read salt", slog.Any("error", err))
 		return err
@@ -155,6 +156,7 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 		}
 	}
 	buffer := buf.New()
+	defer buffer.Release()
 	if err := c.reader.ReadBuffer(buffer); err != nil {
 		return 0, err
 	}
