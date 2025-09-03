@@ -151,6 +151,7 @@ func (r *Reader) WaitReadBuffer() (buffer *buf.Buffer, err error) {
 }
 
 func (r *Reader) readBuffer() (*buf.Buffer, error) {
+	// reading packet length
 	buffer := buf.NewSize(PacketLengthBufferSize + Overhead)
 	_, err := buffer.ReadFullFrom(r.reader, buffer.FreeLen())
 	if err != nil {
@@ -162,7 +163,7 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 		buffer.Release()
 		return nil, err
 	}
-	increaseNonce(r.nonce)
+	// reading content
 	length := int(binary.BigEndian.Uint16(buffer.To(PacketLengthBufferSize)))
 	buffer.Release()
 	buffer = buf.NewSize(length + Overhead)
@@ -171,6 +172,9 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 		buffer.Release()
 		return nil, err
 	}
+	// if length was extracted, decoded correctly and the content was read successfully
+	// increase once
+	increaseNonce(r.nonce)
 	_, err = r.cipher.Open(buffer.Index(0), r.nonce, buffer.Bytes(), nil)
 	if err != nil {
 		buffer.Release()
