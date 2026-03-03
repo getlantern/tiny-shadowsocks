@@ -3,8 +3,10 @@ package shadowio
 import (
 	"crypto/cipher"
 	"encoding/binary"
+	"errors"
 	"io"
 	"log/slog"
+	"syscall"
 
 	"github.com/sagernet/sing/common/buf"
 	N "github.com/sagernet/sing/common/network"
@@ -30,6 +32,14 @@ type Reader struct {
 	nonce           []byte
 	cache           *buf.Buffer
 	readWaitOptions N.ReadWaitOptions
+
+	// State for resuming partial AEAD frame reads across EAGAIN boundaries.
+	// When reading from a non-blocking socket, io.ReadFull may return EAGAIN
+	// after a partial read if an encrypted frame spans multiple TCP segments.
+	// These fields preserve the in-progress buffer so the next call resumes.
+	pending      *buf.Buffer
+	pendingPhase int // 0 = reading length header, 1 = reading content
+	contentLen   int
 }
 
 func NewReader(upstream io.Reader, cipher cipher.AEAD) *Reader {
@@ -152,33 +162,54 @@ func (r *Reader) WaitReadBuffer() (buffer *buf.Buffer, err error) {
 }
 
 func (r *Reader) readBuffer() (*buf.Buffer, error) {
-	// reading packet length
-	buffer := buf.NewSize(PacketLengthBufferSize + Overhead)
-	_, err := buffer.ReadFullFrom(r.reader, buffer.FreeLen())
-	if err != nil {
-		slog.Warn("failed to read encoded packet length", slog.Any("error", err))
-		buffer.Release()
-		return nil, err
+	// Phase 0: Read and decrypt the 2-byte length header + AEAD overhead.
+	if r.pendingPhase == 0 {
+		if r.pending == nil {
+			r.pending = buf.NewSize(PacketLengthBufferSize + Overhead)
+		}
+		_, err := r.pending.ReadFullFrom(r.reader, r.pending.FreeLen())
+		if err != nil {
+			if errors.Is(err, syscall.EAGAIN) {
+				// Partial read — preserve buffer state for next call.
+				return nil, err
+			}
+			slog.Warn("failed to read encoded packet length", slog.Any("error", err))
+			r.pending.Release()
+			r.pending = nil
+			return nil, err
+		}
+		_, err = r.cipher.Open(r.pending.Index(0), r.nonce, r.pending.Bytes(), nil)
+		if err != nil {
+			slog.Error("failed to decode packet length", slog.Any("error", err))
+			r.pending.Release()
+			r.pending = nil
+			return nil, err
+		}
+		r.contentLen = int(binary.BigEndian.Uint16(r.pending.To(PacketLengthBufferSize)))
+		r.pending.Release()
+		r.pending = buf.NewSize(r.contentLen + Overhead)
+		r.pendingPhase = 1
 	}
-	_, err = r.cipher.Open(buffer.Index(0), r.nonce, buffer.Bytes(), nil)
+
+	// Phase 1: Read and decrypt the content payload.
+	_, err := r.pending.ReadFullFrom(r.reader, r.pending.FreeLen())
 	if err != nil {
-		slog.Error("failed to decode packet length", slog.Any("error", err))
-		buffer.Release()
-		return nil, err
-	}
-	// reading content
-	length := int(binary.BigEndian.Uint16(buffer.To(PacketLengthBufferSize)))
-	buffer.Release()
-	buffer = buf.NewSize(length + Overhead)
-	_, err = buffer.ReadFullFrom(r.reader, buffer.FreeLen())
-	if err != nil {
+		if errors.Is(err, syscall.EAGAIN) {
+			// Partial read — preserve buffer state for next call.
+			return nil, err
+		}
 		slog.Warn("failed to read encoded content", slog.Any("error", err))
-		buffer.Release()
+		r.pending.Release()
+		r.pending = nil
+		r.pendingPhase = 0
 		return nil, err
 	}
-	// if length was extracted, decoded correctly and the content was read successfully
-	// increase nonce
+
 	increaseNonce(r.nonce)
+	buffer := r.pending
+	r.pending = nil
+	r.pendingPhase = 0
+
 	_, err = r.cipher.Open(buffer.Index(0), r.nonce, buffer.Bytes(), nil)
 	if err != nil {
 		slog.Error("failed to decode content", slog.Any("error", err))
@@ -186,6 +217,6 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 		return nil, err
 	}
 	increaseNonce(r.nonce)
-	buffer.Truncate(length)
+	buffer.Truncate(r.contentLen)
 	return buffer, nil
 }
