@@ -67,17 +67,33 @@ func (w *BufferedWriter) Fallthrough() error {
 	if w.buffer == nil {
 		return nil
 	}
+	defer func() {
+		w.buffer.Release()
+		w.buffer = nil
+	}()
 	if !w.buffer.IsEmpty() {
 		_, err := w.upstream.Write(w.buffer.Bytes())
 		if err != nil {
 			return err
 		}
 	}
-	w.buffer.Release()
-	w.buffer = nil
 	return nil
 }
 
 func (w *BufferedWriter) WriterReplaceable() bool {
 	return w.buffer == nil
+}
+
+// Release frees the pooled buffer without flushing it. It is safe to call
+// multiple times and after Fallthrough, both of which leave w.buffer nil.
+// Use it via defer to guarantee the buffer is returned to the pool on error
+// paths that return before Fallthrough.
+func (w *BufferedWriter) Release() {
+	w.access.Lock()
+	defer w.access.Unlock()
+	if w.buffer == nil {
+		return
+	}
+	w.buffer.Release()
+	w.buffer = nil
 }

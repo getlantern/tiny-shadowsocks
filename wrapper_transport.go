@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fmt"
-	"log/slog"
+	"errors"
 
 	"github.com/CosmWasm/tinyjson"
 	"github.com/getlantern/tiny-shadowsocks/config"
@@ -21,7 +20,7 @@ var _ v1.ConfigurableTransport = (*ShadowsocksWrappingTransport)(nil)
 
 func (t *ShadowsocksWrappingTransport) Wrap(conn v1net.Conn) (v1net.Conn, error) {
 	if t.dialer == nil {
-		return nil, fmt.Errorf("dialer is not configured")
+		return nil, errors.New("dialer is not configured")
 	}
 	return t.dialer.DialEarlyConn(conn, t.destination), conn.SetNonBlock(true)
 }
@@ -29,7 +28,6 @@ func (t *ShadowsocksWrappingTransport) Wrap(conn v1net.Conn) (v1net.Conn, error)
 func (t *ShadowsocksWrappingTransport) Configure(cfg []byte) error {
 	var parsedConfig config.Config
 	if err := tinyjson.Unmarshal(cfg, &parsedConfig); err != nil {
-		slog.Error("failed to unmarshal config", slog.Any("error", err))
 		return err
 	}
 
@@ -39,7 +37,7 @@ func (t *ShadowsocksWrappingTransport) Configure(cfg []byte) error {
 
 	dialer, err := newDialer(parsedConfig.Method, parsedConfig.Password)
 	if err != nil {
-		return fmt.Errorf("failed to create dialer: %w", err)
+		return errors.New("failed to create dialer: " + err.Error())
 	}
 	t.dialer = dialer
 	t.destination = metadata.ParseSocksaddrHostPortStr(parsedConfig.RemoteAddr, parsedConfig.RemotePort)

@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"errors"
-	"log/slog"
 	"os"
 
 	"github.com/getlantern/tiny-shadowsocks/bufio"
@@ -96,7 +95,6 @@ func (c *ClientConn) writeRequest(payload []byte) error {
 	key := buf.NewSize(c.keySaltLength)
 	defer key.Release()
 	if err := Kdf(c.key, requestBuffer.Bytes(), key); err != nil {
-		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
 		return err
 	}
 	writeCipher, err := c.constructor(key.Bytes())
@@ -106,6 +104,7 @@ func (c *ClientConn) writeRequest(payload []byte) error {
 	bufferedRequestWriter := bufio.NewBufferedWriter(c.Conn, requestBuffer)
 	requestContentWriter := shadowio.NewWriter(bufferedRequestWriter, writeCipher, nil, MaxPacketSize)
 	bufferedRequestContentWriter := bufio.NewBufferedWriter(requestContentWriter, buf.New())
+	defer bufferedRequestContentWriter.Release()
 	if err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedRequestContentWriter, c.destination); err != nil {
 		return err
 	}
@@ -129,18 +128,15 @@ func (c *ClientConn) readResponse() error {
 	buffer := buf.NewSize(c.keySaltLength)
 	defer buffer.Release()
 	if _, err := buffer.ReadFullFrom(c.Conn, c.keySaltLength); err != nil {
-		slog.Warn("failed to read salt", slog.Any("error", err))
 		return err
 	}
 	key := buf.NewSize(c.keySaltLength)
 	defer key.Release()
 	if err := Kdf(c.key, buffer.Bytes(), key); err != nil {
-		slog.Error("failed to generate kdf for cipher", slog.Any("error", err))
 		return err
 	}
 	readCipher, err := c.constructor(key.Bytes())
 	if err != nil {
-		slog.Error("failed to build cipher decrypt", slog.Any("error", err))
 		return err
 	}
 	reader := shadowio.NewReader(c.Conn, readCipher)
@@ -161,6 +157,16 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	return copy(p, buffer.Bytes()), nil
+}
+
+// Close releases the reader's pooled buffers before closing the underlying
+// connection. Without this, buffers held in the reader's cache or mid-frame
+// pending state are dropped without being returned to the pool.
+func (c *ClientConn) Close() error {
+	if c.reader != nil {
+		c.reader.Close()
+	}
+	return c.Conn.Close()
 }
 
 func (c *ClientConn) Write(p []byte) (n int, err error) {
