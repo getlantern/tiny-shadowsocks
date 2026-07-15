@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log/slog"
 	"syscall"
 
 	"github.com/sagernet/sing/common/buf"
@@ -187,14 +186,12 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 				// Partial read — preserve buffer state for next call.
 				return nil, err
 			}
-			slog.Warn("failed to read encoded packet length", slog.Any("error", err))
 			r.pending.Release()
 			r.pending = nil
 			return nil, err
 		}
 		_, err = r.cipher.Open(r.pending.Index(0), r.nonce, r.pending.Bytes(), nil)
 		if err != nil {
-			slog.Error("failed to decode packet length", slog.Any("error", err))
 			r.pending.Release()
 			r.pending = nil
 			return nil, err
@@ -212,7 +209,6 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 			// Partial read — preserve buffer state for next call.
 			return nil, err
 		}
-		slog.Warn("failed to read encoded content", slog.Any("error", err))
 		r.pending.Release()
 		r.pending = nil
 		r.pendingPhase = 0
@@ -226,7 +222,6 @@ func (r *Reader) readBuffer() (*buf.Buffer, error) {
 
 	_, err = r.cipher.Open(buffer.Index(0), r.nonce, buffer.Bytes(), nil)
 	if err != nil {
-		slog.Error("failed to decode content", slog.Any("error", err))
 		buffer.Release()
 		return nil, err
 	}

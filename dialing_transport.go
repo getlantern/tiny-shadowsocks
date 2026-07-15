@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fmt"
-	"log/slog"
+	"errors"
 
 	"github.com/CosmWasm/tinyjson"
 	"github.com/getlantern/tiny-shadowsocks/config"
@@ -27,7 +26,6 @@ func (fdt *ShadowsocksFixedDialingTransport) SetDialer(dialer func(network, addr
 func (fdt *ShadowsocksFixedDialingTransport) DialFixed() (v1net.Conn, error) {
 	conn, err := fdt.dialer("tcp", "127.0.0.1:7777") // TODO: hardcoded address, any better idea?
 	if err != nil {
-		slog.Error("failed to dial with dialer: ", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -37,13 +35,12 @@ func (fdt *ShadowsocksFixedDialingTransport) DialFixed() (v1net.Conn, error) {
 func (fdt *ShadowsocksFixedDialingTransport) Configure(cfg []byte) error {
 	var parsedConfig config.Config
 	if err := tinyjson.Unmarshal(cfg, &parsedConfig); err != nil {
-		slog.Error("failed to unmarshal config", slog.Any("error", err))
 		return err
 	}
 
 	dialer, err := newDialer(parsedConfig.Method, parsedConfig.Password)
 	if err != nil {
-		return fmt.Errorf("failed to create dialer: %w", err)
+		return errors.New("failed to create dialer: " + err.Error())
 	}
 	fdt.shadowsocksDialer = dialer
 	fdt.destination = metadata.ParseSocksaddrHostPortStr(parsedConfig.RemoteAddr, parsedConfig.RemotePort)
