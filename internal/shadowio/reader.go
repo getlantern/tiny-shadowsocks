@@ -60,6 +60,10 @@ func (r *Reader) Close() error {
 		r.pending.Release()
 		r.pending = nil
 	}
+	// Reset frame state so a reused Reader restarts at the length header
+	// instead of dereferencing a nil r.pending in phase 1.
+	r.pendingPhase = 0
+	r.contentLen = 0
 	return nil
 }
 
