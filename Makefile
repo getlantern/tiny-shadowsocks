@@ -15,7 +15,16 @@ debug:
 	tinygo build -o build/shadowsocks_client_debug.wasm -target=wasi -scheduler=none -gc=conservative .
 
 release:
-	tinygo build -o build/shadowsocks_client.wasm -target=wasi -no-debug -scheduler=none -gc=conservative .
+	tinygo build -o build/shadowsocks_client.wasm \
+	  -target=wasi \
+	  -no-debug \
+	  -opt=z \
+	  -panic=trap \
+	  -scheduler=none \
+	  -gc=conservative \
+	  .
+	wasm-opt -Oz --strip-debug --strip-producers --strip-dwarf --vacuum --converge \
+	  build/shadowsocks_client.wasm -o build/shadowsocks_client.wasm
 
 test:
 	go test ./...
