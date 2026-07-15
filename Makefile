@@ -15,6 +15,7 @@ debug:
 	tinygo build -o build/shadowsocks_client_debug.wasm -target=wasi -scheduler=none -gc=conservative .
 
 release:
+	@command -v wasm-opt >/dev/null 2>&1 || { echo "Error: wasm-opt (Binaryen) is required for the release build but was not found in PATH. Install Binaryen: https://github.com/WebAssembly/binaryen"; exit 1; }
 	tinygo build -o build/shadowsocks_client.wasm \
 	  -target=wasi \
 	  -no-debug \
