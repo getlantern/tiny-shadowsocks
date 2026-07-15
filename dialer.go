@@ -106,6 +106,7 @@ func (c *ClientConn) writeRequest(payload []byte) error {
 	bufferedRequestWriter := bufio.NewBufferedWriter(c.Conn, requestBuffer)
 	requestContentWriter := shadowio.NewWriter(bufferedRequestWriter, writeCipher, nil, MaxPacketSize)
 	bufferedRequestContentWriter := bufio.NewBufferedWriter(requestContentWriter, buf.New())
+	defer bufferedRequestContentWriter.Release()
 	if err = metadata.SocksaddrSerializer.WriteAddrPort(bufferedRequestContentWriter, c.destination); err != nil {
 		return err
 	}
@@ -161,6 +162,16 @@ func (c *ClientConn) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	return copy(p, buffer.Bytes()), nil
+}
+
+// Close releases the reader's pooled buffers before closing the underlying
+// connection. Without this, buffers held in the reader's cache or mid-frame
+// pending state are dropped without being returned to the pool.
+func (c *ClientConn) Close() error {
+	if c.reader != nil {
+		c.reader.Close()
+	}
+	return c.Conn.Close()
 }
 
 func (c *ClientConn) Write(p []byte) (n int, err error) {

@@ -50,6 +50,20 @@ func NewReader(upstream io.Reader, cipher cipher.AEAD) *Reader {
 	}
 }
 
+// Close releases any pooled buffers still held by the reader. It is safe to
+// call multiple times. It does not close the underlying reader.
+func (r *Reader) Close() error {
+	if r.cache != nil {
+		r.cache.Release()
+		r.cache = nil
+	}
+	if r.pending != nil {
+		r.pending.Release()
+		r.pending = nil
+	}
+	return nil
+}
+
 func (r *Reader) ReadFixedBuffer(pLen int) (*buf.Buffer, error) {
 	buffer := buf.NewSize(pLen + Overhead)
 	_, err := buffer.ReadFullFrom(r.reader, buffer.FreeLen())
